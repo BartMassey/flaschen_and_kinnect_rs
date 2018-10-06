@@ -11,6 +11,7 @@ extern crate freenectrs;
 
 use std::env;
 use std::io;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use img::Img;
@@ -71,23 +72,27 @@ fn main() {
 	//create a new image
 	let mut i = Img::new(h_w_z.0, h_w_z.1, h_w_z.2);
 
-	let mut end = false;
-	let mut input = String::new();
+	let end = Arc::new(Mutex::new(false));
+        let thread_end = end.clone();
 
 	//create a new thread that will waits for the user input. Thread is put to sleep if there is no input to be 
 	//read so that it doesnt waste as many clock cycles when there is nothing. Once there is a match to quite we 
 	//break the inf loop and let the thread exit.
 	thread::spawn(move || {
+	        let mut input = String::new();
 		loop{
 			println!("inside thread");
-			end = match io::stdin().read_line(&mut input) {
+		        let found_end =
+                            match io::stdin().read_line(&mut input) {
 				Ok(len)	=>	{println!("len: {:?} input: {}", len, input); if len > 0 && input.trim() == 'q'.to_string() { println!("inside ok"); true} else {false} },
 				Err(_)	=> { println!("Inside error for stdin() "); thread::sleep(Duration::from_millis(2)); false},
 			};
 
-			if end == true{
-				println!("End is true and should break out of loop");
-				break;
+			if found_end {
+			        println!("End is true and should break out of loop");
+                                let mut end = thread_end.lock().unwrap();
+                                *end = true;
+				return;
 			}
 			thread::sleep(Duration::from_millis(2));
 		}
@@ -95,7 +100,7 @@ fn main() {
 
 	//Loop that takes the depth data from the kinect, creates a usuable data for the flaschen T. 
 	//and sends the data to the display.
-	while end != true {
+	while !*end.lock().unwrap() {
 		//println!("end: {:?}", end);
 		//Fetch the depth frames
 		if let Ok((data,_)) = depth_stream.receiver.try_recv() {
